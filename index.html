@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1f14">
+<title>تحكم روبوت MRC</title>
+<style>
+:root{
+  --bg:#0b1f14; --panel:#123222; --line:#1f4d34; --text:#eaf7ef; --muted:#9cc2ab;
+  --accent:#36d17a; --kick:#e2367a; --soft:#f0a43a; --danger:#e5484d; --knob:#eaf7ef;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,"SF Arabic","Segoe UI",Tahoma,sans-serif;overflow:hidden;touch-action:none}
+button{font-family:inherit;color:inherit;border:0;cursor:pointer}
+.app{display:grid;grid-template-rows:auto 1fr;height:100%;
+  padding:max(8px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+/* top bar */
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:14px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--danger)}
+.dot.on{background:var(--accent)} .dot.wait{background:var(--soft)}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-size:15px;font-weight:600}
+.btn.primary{background:var(--accent);color:#06210f;border-color:var(--accent)}
+.btn.stop{background:var(--danger);border-color:var(--danger)}
+.spacer{flex:1}
+/* play area */
+.play{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0;margin-top:8px;direction:ltr}
+.zone{background:var(--panel);border:1px solid var(--line);border-radius:20px;position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
+#stickZone{touch-action:none}
+.base{width:min(62vmin,300px);height:min(62vmin,300px);border-radius:50%;border:2px dashed var(--line);position:relative;
+  background:radial-gradient(circle,#18402b 0%,#123222 70%)}
+.knob{position:absolute;width:38%;height:38%;left:31%;top:31%;border-radius:50%;background:var(--knob);
+  box-shadow:0 4px 18px rgba(0,0,0,.45);transition:transform .08s}
+.knob.active{transition:none}
+.hint{position:absolute;bottom:10px;width:100%;text-align:center;font-size:13px;color:var(--muted);direction:rtl}
+.btns{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:2fr 1fr;gap:10px;width:100%;height:100%;padding:12px;direction:rtl}
+.big{border-radius:18px;font-size:clamp(18px,4.5vmin,30px);font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.big small{font-size:13px;font-weight:500;opacity:.85}
+.k-strong{background:var(--kick)} .k-soft{background:var(--soft);color:#2a1700}
+.slow{background:#1d4732;border:2px solid var(--line)} .slow.on{background:#2f6fd6;border-color:#2f6fd6}
+.halt{background:#3a1416;border:2px solid var(--danger);color:#ffd9da}
+.big:active,.big.pressed{transform:scale(.96);filter:brightness(1.15)}
+/* overlays */
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.sheet.show{display:flex}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;width:min(560px,100%);max-height:90vh;overflow:auto;touch-action:pan-y;user-select:text;-webkit-user-select:text}
+.card h2{margin:0 0 12px;font-size:20px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row label{font-size:15px}
+.row output{min-width:56px;text-align:center;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
+input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{background:transparent;padding:6px 12px;font-size:14px}
+.seg button.on{background:var(--accent);color:#06210f;font-weight:700}
+.card ol{padding-inline-start:20px;line-height:1.9;font-size:15px;margin:6px 0}
+.note{color:var(--muted);font-size:13px;line-height:1.7}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#000c;padding:10px 16px;border-radius:12px;font-size:14px;display:none;z-index:20;max-width:90vw;text-align:center}
+@media (orientation:portrait){
+  .play{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <button class="btn primary" id="connectBtn">اتصال بالروبوت</button>
+    <span class="pill"><span class="dot" id="connDot"></span><span id="connTxt">غير متصل</span></span>
+    <span class="pill"><span class="dot" id="progDot"></span><span id="progTxt">البرنامج متوقف</span></span>
+    <span class="pill">🔋 <span id="batt">--</span></span>
+    <span class="spacer"></span>
+    <button class="btn" id="runBtn">▶ تشغيل</button>
+    <button class="btn" id="stopProgBtn">■ إيقاف</button>
+    <button class="btn" id="setBtn">⚙︎</button>
+    <button class="btn" id="helpBtn">؟</button>
+  </div>
+
+  <div class="play">
+    <div class="zone" id="stickZone">
+      <div class="base" id="base"><div class="knob" id="knob"></div></div>
+      <div class="hint">حرّك الدائرة للقيادة</div>
+    </div>
+    <div class="zone">
+      <div class="btns">
+        <button class="big k-strong" id="kickStrong">⚽ تسديد قوي<small>الذراع بالكامل</small></button>
+        <button class="big k-soft" id="kickSoft">تمريرة<small>ضربة خفيفة</small></button>
+        <button class="big slow" id="slowBtn">🐢 بطيء<small>اضغط مطوّلًا</small></button>
+        <button class="big halt" id="haltBtn">✋ توقف</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- settings -->
+<div class="sheet" id="settings"><div class="card">
+  <h2>الإعدادات</h2>
+  <div class="row"><label>أقصى سرعة</label><input type="range" id="sMax" min="300" max="1100" step="50"><output id="oMax"></output></div>
+  <div class="row"><label>حساسية الدوران</label><input type="range" id="sTurn" min="30" max="100" step="5"><output id="oTurn"></output></div>
+  <div class="row"><label>نسبة الوضع البطيء</label><input type="range" id="sSlow" min="20" max="70" step="5"><output id="oSlow"></output></div>
+  <div class="row"><label>زاوية التسديد (حتى 80°)</label><input type="range" id="sAng" min="30" max="80" step="5"><output id="oAng"></output></div>
+  <div class="row"><label>سرعة التسديد القوي</label><input type="range" id="sKs" min="800" max="2000" step="100"><output id="oKs"></output></div>
+  <div class="row"><label>اتجاه فتح الذراع</label><div class="seg" id="segDir"><button data-v="1">موجب +</button><button data-v="-1">سالب −</button></div></div>
+  <div class="row"><label>عكس اتجاه الأمام</label><div class="seg" id="segInv"><button data-v="0">لا</button><button data-v="1">نعم</button></div></div>
+  <div class="row"><label>تبديل اليمين واليسار</label><div class="seg" id="segSwap"><button data-v="0">لا</button><button data-v="1">نعم</button></div></div>
+  <p class="note">تُحفظ الإعدادات على هذا الجوال. جرّب التسديد ببطء أولًا، وإذا انفتح الذراع للجهة الخطأ غيّر «اتجاه فتح الذراع».</p>
+  <button class="btn primary" data-close>تم</button>
+</div></div>
+
+<!-- help -->
+<div class="sheet" id="help"><div class="card">
+  <h2>طريقة الاستخدام</h2>
+  <ol>
+    <li>افتح هذه الصفحة من تطبيق <b>Bluefy</b> على الآيفون (Safari لا يدعم البلوتوث).</li>
+    <li>شغّل الهب، ثم اضغط «اتصال بالروبوت» واختر الهب من القائمة.</li>
+    <li>اضغط «▶ تشغيل» أو الزر الأوسط في الهب. يصبح ضوء الهب أصفر ثم أخضر عند القيادة.</li>
+    <li>أدر الجوال بالعرض: الإبهام الأيسر للقيادة، والأيمن للتسديد.</li>
+  </ol>
+  <p class="note">إذا انقطع الاتصال يتوقف الروبوت تلقائيًا خلال 0.4 ثانية. اجعل الجوال على وضع عدم الإزعاج وأبقِ الشاشة مضاءة أثناء المباراة.</p>
+  <button class="btn primary" data-close>فهمت</button>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const SVC = 'c5f50001-8280-46da-89f4-6d8051e4aeef';
+  const CHR = 'c5f50002-8280-46da-89f4-6d8051e4aeef';
+  const $ = id => document.getElementById(id);
+
+  // ---------- settings ----------
+  const DEF = {max:1000, turn:70, slow:40, ang:70, ks:1500, dir:1, inv:0, swap:0};
+  let S = {...DEF};
+  try { Object.assign(S, JSON.parse(localStorage.getItem('mrcSettings') || '{}')); } catch(e) {}
+  const save = () => { try { localStorage.setItem('mrcSettings', JSON.stringify(S)); } catch(e) {} };
+  const sliders = [['sMax','oMax','max',''],['sTurn','oTurn','turn','%'],['sSlow','oSlow','slow','%'],['sAng','oAng','ang','°'],['sKs','oKs','ks','']];
+  sliders.forEach(([s,o,k,u]) => {
+    const el = $(s), out = $(o);
+    el.value = S[k]; out.textContent = S[k] + u;
+    el.addEventListener('input', () => { S[k] = +el.value; out.textContent = S[k] + u; save(); });
+  });
+  const seg = (id, key) => {
+    const box = $(id);
+    const paint = () => box.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.v === S[key]));
+    box.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S[key] = +b.dataset.v; save(); paint(); });
+    paint();
+  };
+  seg('segDir','dir'); seg('segInv','inv'); seg('segSwap','swap');
+
+  const openSheet = id => $(id).classList.add('show');
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.sheet').classList.remove('show'));
+  $('setBtn').onclick = () => openSheet('settings');
+  $('helpBtn').onclick = () => openSheet('help');
+
+  let toastT;
+  const toast = msg => { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3000); };
+
+  // ---------- bluetooth ----------
+  let dev = null, chr = null, connected = false, running = false;
+  const queue = []; let writing = false;
+  const enc = new TextEncoder(), dec = new TextDecoder();
+
+  function setConn(state) {
+    connected = state;
+    $('connDot').className = 'dot' + (state ? ' on' : '');
+    $('connTxt').textContent = state ? 'متصل' : 'غير متصل';
+    $('connectBtn').textContent = state ? 'قطع الاتصال' : 'اتصال بالروبوت';
+    $('connectBtn').classList.toggle('primary', !state);
+    if (!state) setRun(false);
+  }
+  function setRun(state) {
+    running = state;
+    $('progDot').className = 'dot' + (state ? ' on' : (connected ? ' wait' : ''));
+    $('progTxt').textContent = state ? 'البرنامج يعمل' : 'البرنامج متوقف';
+  }
+
+  async function pump() {
+    if (writing || !chr) return;
+    writing = true;
+    while (queue.length && chr) {
+      const pkt = queue.shift();
+      try {
+        if (chr.writeValueWithResponse) await chr.writeValueWithResponse(pkt.data);
+        else await chr.writeValue(pkt.data);
+      } catch (e) { /* drop this packet */ }
+    }
+    writing = false;
+  }
+  function sendRaw(bytes, kind) {
+    if (!connected) return;
+    if (kind === 'drive') {               // keep only the newest drive packet
+      const i = queue.findIndex(p => p.kind === 'drive');
+      if (i >= 0) queue.splice(i, 1);
+    }
+    queue.push({data: bytes, kind});
+    pump();
+  }
+  function sendLine(line, kind = 'cmd') {
+    const body = enc.encode(line + '\n');
+    const pkt = new Uint8Array(body.length + 1);
+    pkt[0] = 0x06; pkt.set(body, 1);      // 0x06 = WRITE_STDIN
+    sendRaw(pkt, kind);
+  }
+
+  let outBuf = '';
+  function onEvent(e) {
+    const v = new Uint8Array(e.target.value.buffer);
+    if (v[0] === 0x00 && v.length >= 5) {              // STATUS_REPORT
+      const flags = v[1] | (v[2] << 8) | (v[3] << 16) | (v[4] << 24);
+      setRun(!!(flags & (1 << 6)));
+      if (flags & 1) $('batt').textContent = 'منخفضة!';
+    } else if (v[0] === 0x01) {                        // WRITE_STDOUT
+      outBuf += dec.decode(v.slice(1));
+      let i;
+      while ((i = outBuf.indexOf('\n')) >= 0) {
+        const line = outBuf.slice(0, i).trim(); outBuf = outBuf.slice(i + 1);
+        if (line && !running) setRun(true);
+        if (line.startsWith('B,')) {
+          const mv = +line.slice(2);
+          const pct = Math.max(0, Math.min(100, Math.round((mv - 6800) / (8300 - 6800) * 100)));
+          $('batt').textContent = pct + '%';
+        } else if (line === 'READY') { toast('الروبوت جاهز ✅'); setRun(true); }
+      }
+    }
+  }
+
+  async function connect() {
+    if (!navigator.bluetooth) { openSheet('help'); toast('افتح الصفحة من تطبيق Bluefy'); return; }
+    try {
+      dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }] });
+      dev.addEventListener('gattserverdisconnected', () => { chr = null; queue.length = 0; setConn(false); toast('انقطع الاتصال'); });
+      const server = await dev.gatt.connect();
+      const svc = await server.getPrimaryService(SVC);
+      chr = await svc.getCharacteristic(CHR);
+      chr.addEventListener('characteristicvaluechanged', onEvent);
+      await chr.startNotifications();
+      setConn(true); setRun(false);
+      toast('تم الاتصال — اضغط ▶ تشغيل');
+    } catch (e) {
+      if (e && e.name !== 'NotFoundError') toast('تعذّر الاتصال: ' + (e.message || e));
+    }
+  }
+  $('connectBtn').onclick = () => {
+    if (connected && dev) { try { dev.gatt.disconnect(); } catch(e) {} }
+    else connect();
+  };
+  $('runBtn').onclick = () => { if (!connected) return toast('اتصل بالروبوت أولًا'); sendRaw(new Uint8Array([0x01]), 'cmd'); };
+  $('stopProgBtn').onclick = () => { if (!connected) return; sendLine('X'); sendRaw(new Uint8Array([0x00]), 'cmd'); };
+
+  // ---------- joystick ----------
+  const base = $('base'), knob = $('knob'), zone = $('stickZone');
+  let stick = {x: 0, y: 0}, stickId = null;
+  function moveKnob(cx, cy) {
+    const r = base.getBoundingClientRect();
+    const R = r.width / 2;
+    let dx = cx - (r.left + R), dy = cy - (r.top + R);
+    const d = Math.hypot(dx, dy), lim = R * 0.62;
+    if (d > lim) { dx *= lim / d; dy *= lim / d; }
+    knob.style.transform = `translate(${dx}px,${dy}px)`;
+    stick = {x: dx / lim, y: -dy / lim};
+  }
+  zone.addEventListener('pointerdown', e => {
+    if (stickId !== null) return;
+    stickId = e.pointerId; zone.setPointerCapture(e.pointerId);
+    knob.classList.add('active'); moveKnob(e.clientX, e.clientY);
+  });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === stickId) moveKnob(e.clientX, e.clientY); });
+  const release = e => {
+    if (e.pointerId !== stickId) return;
+    stickId = null; stick = {x: 0, y: 0};
+    knob.classList.remove('active'); knob.style.transform = 'translate(0,0)';
+  };
+  zone.addEventListener('pointerup', release);
+  zone.addEventListener('pointercancel', release);
+
+  // ---------- buttons ----------
+  let slow = false;
+  const slowBtn = $('slowBtn');
+  slowBtn.addEventListener('pointerdown', e => { e.preventDefault(); slow = true; slowBtn.classList.add('on'); });
+  ['pointerup','pointercancel','pointerleave'].forEach(t => slowBtn.addEventListener(t, () => { slow = false; slowBtn.classList.remove('on'); }));
+
+  let lastKick = 0;
+  function kick(power) {
+    if (!connected) return toast('غير متصل');
+    const now = Date.now(); if (now - lastKick < 350) return; lastKick = now;
+    const ang = Math.round(S.ang * (power === 'soft' ? 0.6 : 1)) * S.dir;
+    const spd = power === 'soft' ? 600 : S.ks;
+    sendLine(`K,${ang},${spd}`);
+  }
+  const press = (id, fn) => { const b = $(id); b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('pressed'); fn(); });
+    ['pointerup','pointercancel','pointerleave'].forEach(t => b.addEventListener(t, () => b.classList.remove('pressed'))); };
+  press('kickStrong', () => kick('strong'));
+  press('kickSoft', () => kick('soft'));
+  let halted = false;
+  press('haltBtn', () => { halted = true; sendLine('X'); setTimeout(() => halted = false, 500); });
+
+  // ---------- drive loop (20 Hz, also acts as heartbeat) ----------
+  setInterval(() => {
+    if (!connected || !running) return;
+    let x = stick.x, y = stick.y;
+    const dz = 0.08;
+    if (Math.abs(x) < dz) x = 0; if (Math.abs(y) < dz) y = 0;
+    if (halted) { x = 0; y = 0; }
+    if (S.inv) y = -y;
+    x *= S.turn / 100;
+    let l = y + x, r = y - x;
+    const m = Math.max(1, Math.abs(l), Math.abs(r)); l /= m; r /= m;
+    const top = S.max * (slow ? S.slow / 100 : 1);
+    l = Math.round(l * top); r = Math.round(r * top);
+    if (S.swap) [l, r] = [r, l];
+    sendLine(`D,${l},${r}`, 'drive');
+  }, 50);
+
+  // keep screen on when supported
+  async function wake() { try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch(e) {} }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
+  wake();
+
+  if (!navigator.bluetooth) setTimeout(() => toast('للاتصال افتح الصفحة من تطبيق Bluefy'), 600);
+  document.addEventListener('gesturestart', e => e.preventDefault());
+})();
+</script>
+</body>
+</html>

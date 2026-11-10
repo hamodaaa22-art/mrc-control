@@ -70,7 +70,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     <span class="pill"><span class="dot" id="connDot"></span><span id="connTxt">غير متصل</span></span>
     <span class="pill"><span class="dot" id="progDot"></span><span id="progTxt">البرنامج متوقف</span></span>
     <span class="pill">🔋 <span id="batt">--</span></span>
-    <span class="pill">📶 أُرسل <span id="txN">0</span> · وصل <span id="rxN">-</span> · أخطاء <span id="errN">0</span></span>
+    <span class="pill">📶 أُرسل <span id="txN">0</span> · وصل <span id="rxN">-</span> · أخطاء <span id="errN">0</span> · <span id="wm">-</span></span>
     <button class="btn" id="pingBtn">اختبار</button>
     <span class="spacer"></span>
     <button class="btn" id="runBtn">▶ تشغيل</button>
@@ -228,7 +228,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
         if (line.startsWith('NO MOTOR')) toast('محرك غير موصول: ' + line.slice(9));
         if (line.startsWith('B,')) {
           const parts = line.split(',');
-          if (parts[2] !== undefined) $('rxN').textContent = parts[2];
+          if (parts[2] !== undefined) $('rxN').textContent = parts[2] + (parts[3] !== undefined ? ' (' + parts[3] + 'B)' : '');
           const mv = +parts[1];
           const pct = Math.max(0, Math.min(100, Math.round((mv - 6800) / (8300 - 6800) * 100)));
           $('batt').textContent = pct + '%';
@@ -247,6 +247,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
       chr = await svc.getCharacteristic(CHR);
       chr.addEventListener('characteristicvaluechanged', onEvent);
       await chr.startNotifications();
+      $('wm').textContent = chr.writeValueWithResponse ? 'WR' : 'W';
       setConn(true); setRun(false);
       toast('تم الاتصال — اضغط ▶ تشغيل');
     } catch (e) {

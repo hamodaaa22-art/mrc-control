@@ -70,6 +70,8 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     <span class="pill"><span class="dot" id="connDot"></span><span id="connTxt">غير متصل</span></span>
     <span class="pill"><span class="dot" id="progDot"></span><span id="progTxt">البرنامج متوقف</span></span>
     <span class="pill">🔋 <span id="batt">--</span></span>
+    <span class="pill">📶 أُرسل <span id="txN">0</span> · وصل <span id="rxN">-</span> · أخطاء <span id="errN">0</span></span>
+    <button class="btn" id="pingBtn">اختبار</button>
     <span class="spacer"></span>
     <button class="btn" id="runBtn">▶ تشغيل</button>
     <button class="btn" id="stopProgBtn">■ إيقاف</button>
@@ -158,6 +160,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
 
   // ---------- bluetooth ----------
   let dev = null, chr = null, connected = false, running = false;
+  let txN = 0, errN = 0, lastErr = '';
   const queue = []; let writing = false;
   const enc = new TextEncoder(), dec = new TextDecoder();
 
@@ -183,7 +186,12 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
       try {
         if (chr.writeValueWithResponse) await chr.writeValueWithResponse(pkt.data);
         else await chr.writeValue(pkt.data);
-      } catch (e) { /* drop this packet */ }
+        if (pkt.data[0] === 0x06) { txN++; $('txN').textContent = txN; }
+      } catch (e) {
+        errN++; $('errN').textContent = errN;
+        const m = (e && (e.message || e.name)) || String(e);
+        if (m !== lastErr) { lastErr = m; toast('خطأ إرسال: ' + m); }
+      }
     }
     writing = false;
   }
@@ -216,8 +224,12 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
       while ((i = outBuf.indexOf('\n')) >= 0) {
         const line = outBuf.slice(0, i).trim(); outBuf = outBuf.slice(i + 1);
         if (line && !running) setRun(true);
+        if (line === 'PONG') toast('الروبوت يستقبل الأوامر ✅');
+        if (line.startsWith('NO MOTOR')) toast('محرك غير موصول: ' + line.slice(9));
         if (line.startsWith('B,')) {
-          const mv = +line.slice(2);
+          const parts = line.split(',');
+          if (parts[2] !== undefined) $('rxN').textContent = parts[2];
+          const mv = +parts[1];
           const pct = Math.max(0, Math.min(100, Math.round((mv - 6800) / (8300 - 6800) * 100)));
           $('batt').textContent = pct + '%';
         } else if (line === 'READY') { toast('الروبوت جاهز ✅'); setRun(true); }
@@ -245,6 +257,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     if (connected && dev) { try { dev.gatt.disconnect(); } catch(e) {} }
     else connect();
   };
+  $('pingBtn').onclick = () => { if (!connected) return toast('اتصل بالروبوت أولًا'); sendLine('P'); };
   $('runBtn').onclick = () => { if (!connected) return toast('اتصل بالروبوت أولًا'); sendRaw(new Uint8Array([0x01]), 'cmd'); };
   $('stopProgBtn').onclick = () => { if (!connected) return; sendLine('X'); sendRaw(new Uint8Array([0x00]), 'cmd'); };
 

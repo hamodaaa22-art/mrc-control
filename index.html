@@ -36,9 +36,11 @@ button{font-family:inherit;color:inherit;border:0;cursor:pointer}
   box-shadow:0 4px 18px rgba(0,0,0,.45);transition:transform .08s}
 .knob.active{transition:none}
 .hint{position:absolute;bottom:10px;width:100%;text-align:center;font-size:13px;color:var(--muted);direction:rtl}
-.btns{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:2fr 1fr;gap:10px;width:100%;height:100%;padding:12px;direction:rtl}
+.btns{display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:2fr 1fr;gap:10px;width:100%;height:100%;padding:12px;direction:rtl}
 .big{border-radius:18px;font-size:clamp(18px,4.5vmin,30px);font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .big small{font-size:13px;font-weight:500;opacity:.85}
+.btns>.big{grid-column:span 2}.btns>.slow,.btns>.halt{grid-column:span 3}
+.spin{background:#2f6fd6}
 .k-strong{background:var(--kick)} .k-soft{background:var(--soft);color:#2a1700}
 .slow{background:#1d4732;border:2px solid var(--line)} .slow.on{background:#2f6fd6;border-color:#2f6fd6}
 .halt{background:#3a1416;border:2px solid var(--danger);color:#ffd9da}
@@ -88,6 +90,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
       <div class="btns">
         <button class="big k-strong" id="kickStrong">⚽ تسديد قوي<small>الذراع بالكامل</small></button>
         <button class="big k-soft" id="kickSoft">تمريرة<small>ضربة خفيفة</small></button>
+        <button class="big spin" id="spinBtn">↻ 180°<small>دوران سريع</small></button>
         <button class="big slow" id="slowBtn">🐢 بطيء<small>اضغط مطوّلًا</small></button>
         <button class="big halt" id="haltBtn">✋ توقف</button>
       </div>
@@ -106,7 +109,11 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
   <div class="row"><label>اتجاه فتح الذراع</label><div class="seg" id="segDir"><button data-v="1">موجب +</button><button data-v="-1">سالب −</button></div></div>
   <div class="row"><label>عكس اتجاه الأمام</label><div class="seg" id="segInv"><button data-v="0">لا</button><button data-v="1">نعم</button></div></div>
   <div class="row"><label>تبديل اليمين واليسار</label><div class="seg" id="segSwap"><button data-v="0">لا</button><button data-v="1">نعم</button></div></div>
-  <p class="note">تُحفظ الإعدادات على هذا الجوال. جرّب التسديد ببطء أولًا، وإذا انفتح الذراع للجهة الخطأ غيّر «اتجاه فتح الذراع».</p>
+  <div class="row"><label>منحنى الحساسية (دقة الحركات الصغيرة)</label><input type="range" id="sExpo" min="0" max="80" step="10"><output id="oExpo"></output></div>
+  <div class="row"><label>التسارع (أقل = انطلاق أنعم)</label><input type="range" id="sAcc" min="1000" max="8000" step="500"><output id="oAcc"></output></div>
+  <div class="row"><label>القيادة المستقيمة بالجيروسكوب</label><div class="seg" id="segGyro"><button data-v="1">مفعّلة</button><button data-v="0">متوقفة</button></div></div>
+  <div class="row"><label>اتجاه تصحيح الجيروسكوب</label><div class="seg" id="segGsign"><button data-v="1">عادي</button><button data-v="-1">معكوس</button></div></div>
+  <p class="note">تُحفظ الإعدادات على هذا الجوال. جرّب التسديد ببطء أولًا، وإذا انفتح الذراع للجهة الخطأ غيّر «اتجاه فتح الذراع». إذا انحرف الروبوت أكثر عند السير المستقيم، أو استمر يدور عند ضغط ↻ 180°، غيّر «اتجاه تصحيح الجيروسكوب».</p>
   <button class="btn primary" data-close>تم</button>
 </div></div>
 
@@ -132,11 +139,11 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
   const $ = id => document.getElementById(id);
 
   // ---------- settings ----------
-  const DEF = {max:1000, turn:70, slow:40, ang:70, ks:1500, dir:1, inv:0, swap:0};
+  const DEF = {max:1000, turn:70, slow:40, ang:70, ks:1500, dir:1, inv:0, swap:0, expo:50, acc:3000, gyro:1, gsign:1};
   let S = {...DEF};
   try { Object.assign(S, JSON.parse(localStorage.getItem('mrcSettings') || '{}')); } catch(e) {}
-  const save = () => { try { localStorage.setItem('mrcSettings', JSON.stringify(S)); } catch(e) {} };
-  const sliders = [['sMax','oMax','max',''],['sTurn','oTurn','turn','%'],['sSlow','oSlow','slow','%'],['sAng','oAng','ang','°'],['sKs','oKs','ks','']];
+  const save = () => { try { localStorage.setItem('mrcSettings', JSON.stringify(S)); } catch(e) {} if (typeof sendConfig === 'function') sendConfig(); };
+  const sliders = [['sMax','oMax','max',''],['sTurn','oTurn','turn','%'],['sSlow','oSlow','slow','%'],['sAng','oAng','ang','°'],['sKs','oKs','ks',''],['sExpo','oExpo','expo','%'],['sAcc','oAcc','acc','']];
   sliders.forEach(([s,o,k,u]) => {
     const el = $(s), out = $(o);
     el.value = S[k]; out.textContent = S[k] + u;
@@ -148,7 +155,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     box.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S[key] = +b.dataset.v; save(); paint(); });
     paint();
   };
-  seg('segDir','dir'); seg('segInv','inv'); seg('segSwap','swap');
+  seg('segDir','dir'); seg('segInv','inv'); seg('segSwap','swap'); seg('segGyro','gyro'); seg('segGsign','gsign');
 
   const openSheet = id => $(id).classList.add('show');
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.sheet').classList.remove('show'));
@@ -173,7 +180,9 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     if (!state) setRun(false);
   }
   function setRun(state) {
+    const was = running;
     running = state;
+    if (state && !was) setTimeout(sendConfig, 100);
     $('progDot').className = 'dot' + (state ? ' on' : (connected ? ' wait' : ''));
     $('progTxt').textContent = state ? 'البرنامج يعمل' : 'البرنامج متوقف';
   }
@@ -306,15 +315,31 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     ['pointerup','pointercancel','pointerleave'].forEach(t => b.addEventListener(t, () => b.classList.remove('pressed'))); };
   press('kickStrong', () => kick('strong'));
   press('kickSoft', () => kick('soft'));
+  let lastSpin = 0;
+  press('spinBtn', () => {
+    if (!connected) return toast('غير متصل');
+    const now = Date.now(); if (now - lastSpin < 800) return; lastSpin = now;
+    sendLine('T,180');
+  });
   let halted = false;
   press('haltBtn', () => { halted = true; sendLine('X'); setTimeout(() => halted = false, 500); });
+
+  // ---------- إعدادات الهب ----------
+  let tick = 0;
+  function sendConfig() { if (connected) sendLine(`C,${S.gyro},${S.gsign},${S.acc}`); }
 
   // ---------- drive loop (20 Hz, also acts as heartbeat) ----------
   setInterval(() => {
     if (!connected || !running) return;
     let x = stick.x, y = stick.y;
     const dz = 0.08;
-    if (Math.abs(x) < dz) x = 0; if (Math.abs(y) < dz) y = 0;
+    // منحنى الحساسية: حركة صغيرة = سرعة صغيرة جدًا، ودفع كامل = سرعة كاملة
+    const curve = v => {
+      const a = Math.abs(v); if (a < dz) return 0;
+      const n = Math.min(1, (a - dz) / (1 - dz)), e = S.expo / 100;
+      return Math.sign(v) * ((1 - e) * n + e * n * n * n);
+    };
+    x = curve(x); y = curve(y);
     if (halted) { x = 0; y = 0; }
     if (S.inv) y = -y;
     x *= S.turn / 100;
@@ -324,6 +349,7 @@ input[type=range]{width:45%;accent-color:var(--accent);direction:ltr}
     l = Math.round(l * top); r = Math.round(r * top);
     if (S.swap) [l, r] = [r, l];
     sendLine(`D,${l},${r}`, 'drive');
+    if (++tick % 40 === 0) sendConfig();      // إعادة إرسال الإعدادات كل ثانيتين
   }, 50);
 
   // keep screen on when supported
